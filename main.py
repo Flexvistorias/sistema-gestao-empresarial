@@ -1,7 +1,12 @@
 import os
-from flask import Flask, jsonify, render_template_string
+from flask import Flask, jsonify, render_template_string, request
 
 app = Flask(__name__)
+
+# Authentication configuration via environment variables.
+# Defaults are provided for local development only. Set secure values in production.
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 
 @app.route('/')
 def home():
@@ -73,9 +78,9 @@ def home():
         </div>
         
         <div class="info">
-            <h3>🔑 Credenciais de Acesso</h3>
-            <p><strong>Usuário:</strong> admin</p>
-            <p><strong>Senha:</strong> admin123</p>
+            <h3>🔑 Acesso</h3>
+            <p>Autenticação protegida por variáveis de ambiente.</p>
+            <p>Defina <code>ADMIN_USERNAME</code> e <code>ADMIN_PASSWORD</code> no ambiente.</p>
         </div>
         
         <div class="info">
@@ -94,6 +99,9 @@ def home():
             <p><code>GET /api/status</code> - Status detalhado do sistema</p>
             <p><code>GET /api/health</code> - Health check</p>
             <p><code>POST /api/login</code> - Sistema de autenticação</p>
+            <p><code>GET /api/clients</code> - Listar clientes</p>
+            <p><code>GET /api/sales</code> - Listar vendas</p>
+            <p><code>GET /api/dashboard/stats</code> - Estatísticas do dashboard</p>
         </div>
         
         <a href="/api/status" class="btn">📊 Testar API</a>
@@ -101,7 +109,7 @@ def home():
         
         <div style="margin-top: 30px; font-size: 14px; color: #666;">
             <p>🚀 Deploy realizado com sucesso no Render.com</p>
-            <p>💾 Banco de dados SQLite integrado</p>
+            <p>💾 Dados de demonstração em memória</p>
             <p>🔒 Sistema seguro e otimizado para produção</p>
         </div>
     </div>
@@ -230,7 +238,7 @@ def api_status():
         'version': '6.3',
         'message': 'Sistema de Gestão Empresarial funcionando perfeitamente!',
         'deploy_platform': 'render.com',
-        'database': 'sqlite_integrated',
+        'database': 'in_memory',
         'framework': 'flask',
         'features_implemented': [
             'Dashboard interativo com gráficos',
@@ -248,10 +256,6 @@ def api_status():
             'vendas': 'Sistema avançado com descontos por cliente',
             'relatorios': 'Contas a receber, Análise de descontos, Mensais',
             'configuracoes': 'Tipos de vistoria, Formas de pagamento'
-        },
-        'credentials': {
-            'username': 'admin',
-            'password': 'admin123'
         }
     })
 
@@ -265,12 +269,53 @@ def health_check():
 
 @app.route('/api/login', methods=['POST'])
 def login():
+    payload = request.get_json(silent=True) or {}
+    username = payload.get('username') or request.form.get('username')
+    password = payload.get('password') or request.form.get('password')
+
+    if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+        return jsonify({
+            'success': True,
+            'message': 'Login realizado com sucesso!',
+            'user': username,
+            'redirect': '/dashboard'
+        })
+
     return jsonify({
-        'success': True,
-        'message': 'Login realizado com sucesso!',
-        'user': 'admin',
-        'redirect': '/dashboard'
-    })
+        'success': False,
+        'message': 'Credenciais inválidas.'
+    }), 401
+
+
+@app.route('/api/clients')
+def list_clients():
+    clients = [
+        {"id": 1, "name": "Acme Ltda", "tier": "Gold", "specialPricing": True},
+        {"id": 2, "name": "Beta Comércio", "tier": "Silver", "specialPricing": False},
+        {"id": 3, "name": "Cliente Exemplo", "tier": "Bronze", "specialPricing": True},
+    ]
+    return jsonify({"items": clients, "count": len(clients)})
+
+
+@app.route('/api/sales')
+def list_sales():
+    sales = [
+        {"id": 101, "clientId": 1, "amount": 1500.0, "discount": 0.1, "date": "2025-10-01"},
+        {"id": 102, "clientId": 2, "amount": 850.0, "discount": 0.05, "date": "2025-10-02"},
+        {"id": 103, "clientId": 3, "amount": 2500.0, "discount": 0.15, "date": "2025-10-03"},
+    ]
+    return jsonify({"items": sales, "count": len(sales)})
+
+
+@app.route('/api/dashboard/stats')
+def dashboard_stats():
+    stats = {
+        "salesCount": 24,
+        "clientsCount": 18,
+        "totalRevenue": 4850.0,
+        "monthlyGrowth": 0.12,
+    }
+    return jsonify(stats)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
