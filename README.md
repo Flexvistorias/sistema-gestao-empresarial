@@ -6,9 +6,8 @@ Sistema completo de gestão empresarial otimizado para deploy no Render.com.
 
 Este projeto está configurado para deploy automático no Render.com.
 
-### Credenciais Padrão
-- **Usuário:** admin
-- **Senha:** admin123
+### Autenticação
+- Defina as variáveis de ambiente `ADMIN_USERNAME` e `ADMIN_PASSWORD` para acesso.
 
 ### Funcionalidades Incluídas
 - ✅ Dashboard interativo com gráficos
@@ -28,12 +27,18 @@ Este projeto está configurado para deploy automático no Render.com.
 └── README.md        # Este arquivo
 ```
 
-### Como Usar
-1. Faça upload destes arquivos para um repositório GitHub
-2. Conecte o repositório ao Render.com
-3. O deploy será automático
-4. Acesse a URL fornecida pelo Render
-5. Faça login com as credenciais padrão
+### Como Usar (Local)
+1. Crie um ambiente virtual: `python3 -m venv .venv && source .venv/bin/activate`
+2. Instale dependências: `pip install -r requirements.txt`
+3. Defina variáveis: `export ADMIN_USERNAME=seu_user ADMIN_PASSWORD=sua_senha`
+4. Execute em dev: `python3 main.py` (http://localhost:5000)
+
+### Como Publicar no Render
+1. Suba este repositório para o GitHub.
+2. No Render, crie um novo serviço Web e selecione o repositório.
+3. Confirme: Build `pip install -r requirements.txt`, Start `gunicorn --bind 0.0.0.0:$PORT main:app`.
+4. Defina as variáveis `ADMIN_USERNAME` e `ADMIN_PASSWORD` em Settings > Environment.
+5. Deploy e acesse a URL fornecida.
 
 ### APIs Disponíveis
 - `GET /` - Interface principal
@@ -44,10 +49,10 @@ Este projeto está configurado para deploy automático no Render.com.
 - `GET /api/dashboard/stats` - Estatísticas
 
 ### Tecnologias
-- **Backend:** Flask + SQLite
+- **Backend:** Flask (dados de demonstração em memória)
 - **Frontend:** HTML5 + TailwindCSS + Chart.js
 - **Deploy:** Render.com
-- **Banco:** SQLite (incluído)
+-- **Banco:** N/A (ponto de extensão para SQLite/PostgreSQL no futuro)
 
 ### Suporte
 Para suporte técnico, consulte a documentação do projeto ou entre em contato com a equipe de desenvolvimento.
