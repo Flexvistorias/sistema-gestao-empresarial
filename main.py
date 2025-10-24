@@ -1,7 +1,105 @@
 import os
-from flask import Flask, jsonify, render_template_string
+from datetime import datetime
+from flask import Flask, jsonify, render_template_string, request, session
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-change-me')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///sge.db')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+db = SQLAlchemy(app)
+
+
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    role = db.Column(db.String(20), default='user', nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    def verify_password(self, password: str) -> bool:
+        return check_password_hash(self.password_hash, password)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'username': self.username,
+            'role': self.role,
+            'created_at': self.created_at.isoformat(),
+        }
+
+
+class Client(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=True)
+    special_value = db.Column(db.String(120), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'email': self.email,
+            'special_value': self.special_value,
+            'created_at': self.created_at.isoformat(),
+        }
+
+
+class Sale(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey('client.id'), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    discount = db.Column(db.Float, default=0.0, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    client = db.relationship('Client', backref=db.backref('sales', lazy=True))
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'client_id': self.client_id,
+            'client_name': self.client.name if self.client else None,
+            'amount': self.amount,
+            'discount': self.discount,
+            'created_at': self.created_at.isoformat(),
+        }
+
+
+def init_db_with_seed_data() -> None:
+    """Create tables and seed minimal data if empty."""
+    with app.app_context():
+        db.create_all()
+
+        # Seed admin user
+        admin = User.query.filter_by(username='admin').first()
+        if not admin:
+            admin = User(
+                username='admin',
+                password_hash=generate_password_hash('admin123'),
+                role='admin',
+            )
+            db.session.add(admin)
+
+        # Seed some clients and sales if none exist
+        if Client.query.count() == 0:
+            client_a = Client(name='Empresa Alpha', email='contato@alpha.com', special_value='Cliente Ouro')
+            client_b = Client(name='Empresa Beta', email='contato@beta.com', special_value='Cliente Prata')
+            db.session.add_all([client_a, client_b])
+            db.session.flush()  # ensure IDs
+
+            sale_1 = Sale(client_id=client_a.id, amount=1200.0, discount=100.0)
+            sale_2 = Sale(client_id=client_b.id, amount=850.0, discount=50.0)
+            sale_3 = Sale(client_id=client_a.id, amount=3200.0, discount=320.0)
+            db.session.add_all([sale_1, sale_2, sale_3])
+
+        db.session.commit()
+
+
+# Initialize database and seed data on import
+init_db_with_seed_data()
 
 @app.route('/')
 def home():
@@ -73,9 +171,9 @@ def home():
         </div>
         
         <div class="info">
-            <h3>🔑 Credenciais de Acesso</h3>
-            <p><strong>Usuário:</strong> admin</p>
-            <p><strong>Senha:</strong> admin123</p>
+            <h3>🔑 Autenticação</h3>
+            <p>Use o endpoint <code>POST /api/login</code> para autenticar.</p>
+            <p>Em ambiente de desenvolvimento, um usuário <code>admin</code> é criado automaticamente.</p>
         </div>
         
         <div class="info">
@@ -93,7 +191,10 @@ def home():
             <h3>🔗 APIs Disponíveis</h3>
             <p><code>GET /api/status</code> - Status detalhado do sistema</p>
             <p><code>GET /api/health</code> - Health check</p>
-            <p><code>POST /api/login</code> - Sistema de autenticação</p>
+            <p><code>POST /api/login</code> - Autenticação (session)</p>
+            <p><code>GET /api/clients</code> - Listar clientes</p>
+            <p><code>GET /api/sales</code> - Listar vendas</p>
+            <p><code>GET /api/dashboard/stats</code> - Estatísticas</p>
         </div>
         
         <a href="/api/status" class="btn">📊 Testar API</a>
@@ -225,12 +326,18 @@ def dashboard():
 
 @app.route('/api/status')
 def api_status():
+    total_clients = Client.query.count()
+    total_sales = Sale.query.count()
+    total_revenue = 0.0
+    for s in Sale.query.all():
+        total_revenue += max(s.amount - s.discount, 0.0)
+
     return jsonify({
         'status': 'online',
         'version': '6.3',
         'message': 'Sistema de Gestão Empresarial funcionando perfeitamente!',
         'deploy_platform': 'render.com',
-        'database': 'sqlite_integrated',
+        'database': 'sqlite',
         'framework': 'flask',
         'features_implemented': [
             'Dashboard interativo com gráficos',
@@ -249,27 +356,86 @@ def api_status():
             'relatorios': 'Contas a receber, Análise de descontos, Mensais',
             'configuracoes': 'Tipos de vistoria, Formas de pagamento'
         },
-        'credentials': {
-            'username': 'admin',
-            'password': 'admin123'
+        'stats': {
+            'total_clients': total_clients,
+            'total_sales': total_sales,
+            'total_revenue': total_revenue,
         }
     })
 
 @app.route('/api/health')
 def health_check():
-    return jsonify({
-        'health': 'ok', 
-        'status': 'running',
-        'uptime': 'online'
-    })
+    try:
+        # Simple DB check
+        _ = User.query.count()
+        db_status = 'ok'
+    except Exception:
+        db_status = 'error'
+    return jsonify({'health': 'ok', 'status': 'running', 'db': db_status})
 
 @app.route('/api/login', methods=['POST'])
 def login():
+    payload = request.get_json(silent=True) or {}
+    username = payload.get('username') or payload.get('user')
+    password = payload.get('password')
+
+    if not username or not password:
+        return jsonify({'success': False, 'message': 'Credenciais inválidas'}), 400
+
+    user = User.query.filter_by(username=username).first()
+    if not user or not user.verify_password(password):
+        return jsonify({'success': False, 'message': 'Usuário ou senha incorretos'}), 401
+
+    session['user_id'] = user.id
+    session['username'] = user.username
+    session['role'] = user.role
+
+    return jsonify({'success': True, 'message': 'Login realizado com sucesso!', 'user': user.to_dict(), 'redirect': '/dashboard'})
+
+
+@app.route('/api/clients')
+def list_clients():
+    limit = request.args.get('limit', type=int) or 50
+    clients = Client.query.order_by(Client.created_at.desc()).limit(limit).all()
+    return jsonify({'items': [c.to_dict() for c in clients], 'count': len(clients)})
+
+
+@app.route('/api/sales')
+def list_sales():
+    limit = request.args.get('limit', type=int) or 50
+    sales = (
+        Sale.query.order_by(Sale.created_at.desc()).limit(limit).all()
+    )
+    return jsonify({'items': [s.to_dict() for s in sales], 'count': len(sales)})
+
+
+@app.route('/api/dashboard/stats')
+def dashboard_stats():
+    total_clients = Client.query.count()
+    total_sales = Sale.query.count()
+    total_revenue = 0.0
+    for s in Sale.query.all():
+        total_revenue += max(s.amount - s.discount, 0.0)
+
+    # Simple top client by revenue
+    top_client_name = None
+    top_client_value = 0.0
+    for client in Client.query.all():
+        value = 0.0
+        for sale in client.sales:
+            value += max(sale.amount - sale.discount, 0.0)
+        if value > top_client_value:
+            top_client_value = value
+            top_client_name = client.name
+
     return jsonify({
-        'success': True,
-        'message': 'Login realizado com sucesso!',
-        'user': 'admin',
-        'redirect': '/dashboard'
+        'total_clients': total_clients,
+        'total_sales': total_sales,
+        'total_revenue': total_revenue,
+        'top_client': {
+            'name': top_client_name,
+            'value': top_client_value,
+        }
     })
 
 if __name__ == '__main__':
